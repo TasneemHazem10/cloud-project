@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blood Donation - Authentication and Identity</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark">BD</span>
+      <div>
+        <strong>Blood Donation</strong>
+        <span class="brand-subtitle">Authentication &amp; Identity Service</span>
+      </div>
+    </div>
+    <div id="header-session" class="header-session" hidden>
+      <span id="header-email"></span>
+      <button type="button" id="logout-button" class="button button-ghost">Log out</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="auth-screen" class="auth-layout">
+      <div class="auth-intro">
+        <h1>Donate safely. Track every step.</h1>
+        <p>Create a donor account or sign in to view your profile, your eligibility status and your donation history.</p>
+        <ul class="feature-list">
+          <li>Secure sign-in with password hashing and JWT</li>
+          <li>Automatic 56-day eligibility calculation</li>
+          <li>Complete donation history from the database</li>
+        </ul>
+      </div>
+
+      <div class="card auth-card">
+        <div class="tabs" role="tablist">
+          <button type="button" id="tab-login" class="tab is-active" role="tab" aria-selected="true">Log in</button>
+          <button type="button" id="tab-register" class="tab" role="tab" aria-selected="false">Register</button>
+        </div>
+
+        <form id="login-form" class="form" novalidate>
+          <h2>Welcome back</h2>
+          <label for="login-email">Email</label>
+          <input id="login-email" type="email" autocomplete="email" required>
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" required>
+          <div id="turnstile-login" class="turnstile-widget"></div>
+          <p id="login-message" class="message" role="status"></p>
+          <button type="submit" class="button button-primary">Log in</button>
+        </form>
+
+        <form id="register-form" class="form" novalidate hidden>
+          <h2>Create a donor account</h2>
+          <label for="register-full-name">Full name</label>
+          <input id="register-full-name" type="text" autocomplete="name" required>
+          <label for="register-email">Email</label>
+          <input id="register-email" type="email" autocomplete="email" required>
+          <label for="register-phone">Phone <span class="optional">optional</span></label>
+          <input id="register-phone" type="tel" autocomplete="tel">
+          <div class="form-row">
+            <div>
+              <label for="register-blood-type">Blood type <span class="optional">optional</span></label>
+              <select id="register-blood-type">
+                <option value="">Select</option>
+                <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+              </select>
+            </div>
+            <div>
+              <label for="register-date-of-birth">Date of birth <span class="optional">optional</span></label>
+              <input id="register-date-of-birth" type="date">
+            </div>
+          </div>
+          <label for="register-city">City <span class="optional">optional</span></label>
+          <input id="register-city" type="text" autocomplete="address-level2">
+          <label for="register-password">Password</label>
+          <input id="register-password" type="password" autocomplete="new-password" required>
+          <p class="hint">At least 8 characters, including a letter and a number.</p>
+          <div id="turnstile-register" class="turnstile-widget"></div>
+          <p id="register-message" class="message" role="status"></p>
+          <button type="submit" class="button button-primary">Create account</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="app-screen" class="dashboard" hidden>
+      <div class="dashboard-header">
+        <div>
+          <h1>Donor dashboard</h1>
+          <p id="dashboard-subtitle">Your identity, eligibility and donation record.</p>
+        </div>
+        <button type="button" id="refresh-button" class="button button-ghost">Refresh data</button>
+      </div>
+
+      <article id="eligibility-banner" class="eligibility-banner">
+        <div class="eligibility-icon" aria-hidden="true">+</div>
+        <div class="eligibility-content">
+          <div class="eligibility-heading">
+            <h2 id="eligibility-status">Checking eligibility...</h2>
+            <span id="eligibility-pill" class="pill">Loading</span>
+          </div>
+          <p id="eligibility-detail" class="eligibility-detail"></p>
+          <div class="eligibility-grid">
+            <div><span class="meta-label">Next eligible date</span><strong id="eligibility-date">-</strong></div>
+            <div><span class="meta-label">Days remaining</span><strong id="eligibility-days">-</strong></div>
+            <div><span class="meta-label">Last donation</span><strong id="eligibility-last">-</strong></div>
+            <div><span class="meta-label">Minimum interval</span><strong id="eligibility-interval">-</strong></div>
+          </div>
+        </div>
+      </article>
+
+      <div class="dashboard-grid">
+        <article class="card">
+          <h2>Donor profile</h2>
+          <p class="card-subtitle">Stored in the donors table and linked to your account.</p>
+          <form id="profile-form" class="form" novalidate>
+            <label for="profile-full-name">Full name</label>
+            <input id="profile-full-name" type="text" required>
+            <label for="profile-email">Email</label>
+            <input id="profile-email" type="email" disabled>
+            <label for="profile-phone">Phone</label>
+            <input id="profile-phone" type="tel">
+            <div class="form-row">
+              <div>
+                <label for="profile-blood-type">Blood type</label>
+                <select id="profile-blood-type">
+                  <option value="">Not set</option>
+                  <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                  <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+                </select>
+              </div>
+              <div>
+                <label for="profile-date-of-birth">Date of birth</label>
+                <input id="profile-date-of-birth" type="date">
+              </div>
+            </div>
+            <label for="profile-city">City</label>
+            <input id="profile-city" type="text">
+            <p id="profile-message" class="message" role="status"></p>
+            <button type="submit" class="button button-primary">Save profile</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-heading-row">
+            <div>
+              <h2>Donation history</h2>
+              <p id="history-count" class="card-subtitle">Loading donations...</p>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="donation-table">
+              <thead>
+                <tr><th>Date</th><th>Location</th><th>Amount</th></tr>
+              </thead>
+              <tbody id="donation-table-body"></tbody>
+            </table>
+          </div>
+          <p id="history-message" class="message" role="status"></p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>
