@@ -61,7 +61,7 @@ Automated: `cd backend && npm test` → 34 tests, all passing locally. The table
 | C02 | Cloud readiness | GET `<api>/api/auth/ready` | 200 with Neon configured | | | |
 | C03 | Cloud end-to-end | Register/login from deployed frontend | Works with real Turnstile keys | | | |
 | C04 | Security headers | `curl.exe -I <web-domain>` | CSP, X-Frame-Options, nosniff etc. present | | | |
-| C05 | Vercel logs | Open API project → Logs | JSON events for register/login/eligibility/donation | | | |
+| C05 | CloudWatch logs on Floci | `aws --profile floci --region us-east-1 --endpoint-url http://localhost:4566 logs tail /aws/lambda/auth-identity-api --since 15m` | JSON events for register/login/eligibility/donation | | | |
 | C06 | CORS | Deployed frontend loads data | No CORS error; API domain listed in `CORS_ORIGINS` | | | |
 
 ## End-to-end workflow for the demo video

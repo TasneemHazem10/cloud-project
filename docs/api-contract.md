@@ -59,7 +59,7 @@ Success `201`:
 
 ```json
 {
-  "token": "eyJhbGciOi...",
+  "token": "<opaque-session-token>",
   "tokenType": "Bearer",
   "expiresAt": "2026-11-23T13:00:00.000Z",
   "expiresInSeconds": 3600,
