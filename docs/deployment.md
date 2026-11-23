@@ -93,7 +93,31 @@ Docker is an alternative to running two local Node processes. It is useful for d
 6. `docker-compose.yml` injects `backend/.env` with `env_file`; the secret is not baked into the image. After changing `.env`, run `docker compose up -d --force-recreate api`.
 7. If you access the frontend from another machine, the browser hostname will not be `localhost`, so `frontend/js/config.js` will use the production placeholder URL. For remote demos, either use a hostname that is in `localhost`/`127.0.0.1` via port forwarding, or replace the production placeholders with real deployed URLs.
 
-## 9. Troubleshooting
+## 9. Floci AWS emulator deployment
+
+This project also deploys the same service onto **Floci**, a free local AWS emulator that listens on port `4566`. No Floci account or auth token is needed. Docker Desktop must be running.
+
+```powershell
+npm run aws:up       # starts floci/floci:latest-compat as floci-blood-donation
+npm run aws:deploy   # creates the five AWS resources and uploads the frontend
+npm run aws:down     # stops/removes the Floci container
+```
+
+`scripts/deploy-floci.ps1` reads `backend/.env` and the root `.env.local`, injects those values into the Lambda environment, creates the IAM role and CloudWatch log group, packages `backend/handler.js` into a zip, deploys the Lambda, creates a REST API with a `{proxy+}` ANY route, and copies `frontend/` into S3. It then writes `frontend/js/config.js` with the generated API Gateway URL. No secret value is printed.
+
+Verification after deployment:
+
+```powershell
+# Health through API Gateway (use the ID printed by npm run aws:deploy)
+curl.exe -i http://localhost:4566/restapis/API_ID/prod/_user_request_/api/auth/health
+
+# Frontend from S3
+curl.exe -i http://localhost:4566/blood-donation-frontend/index.html
+```
+
+Expected: health `200 {"status":"ok",...}` and frontend `200`. The end-to-end harness can be run against the emulator with `BASE_URL` set to the printed API Gateway URL. Successful checks: 16/16 through API Gateway → Lambda → Neon; CloudWatch log group `/aws/lambda/auth-identity-api` contains JSON request and event lines; S3 frontend returns HTTP 200.
+
+## 10. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |

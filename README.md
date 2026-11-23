@@ -1,6 +1,6 @@
 # Blood Donation System — Authentication, Identity, Logging and Monitoring
 
-This folder contains one complete service of the group project: **Authentication and identity** plus **Logging and monitoring**. It is written with the same stack as the module labs (Node.js/Express, Neon Postgres, Vercel, Cloudflare Turnstile) and can run locally or as two Vercel projects.
+This folder contains one complete service of the group project: **Authentication and identity** plus **Logging and monitoring**. It is written with the same stack as the module labs (Node.js/Express, Neon Postgres, Vercel, Cloudflare Turnstile) and can run locally, in Docker, on Vercel, or on the Floci AWS emulator.
 
 No code comments are used anywhere in `backend/` or `frontend/`. Every design decision is explained in this README and in `docs/`.
 
@@ -217,19 +217,19 @@ npm run docker:down
 docker compose up -d --force-recreate api
 ```
 
-### AWS emulator deployment (Floci equivalent)
+### AWS emulator deployment (Floci)
 
-A Floci account is not available in this workspace, so the same architecture was deployed to **LocalStack 3.8.0**, an equivalent AWS emulator. Five AWS services belong to this student's part: **API Gateway (REST API), Lambda, IAM, CloudWatch Logs and S3**. Neon remains the external Postgres database and Cloudflare Turnstile the external bot-protection API.
+The emulator used for this part is **Floci** (`floci/floci:latest-compat`) on `http://localhost:4566`. Five AWS services belong to this student's part: **API Gateway (REST API), Lambda, IAM, CloudWatch Logs and S3**. Neon remains the external Postgres database and Cloudflare Turnstile the external bot-protection API.
 
 ```powershell
-npm run aws:up       # start LocalStack on http://localhost:4566
+npm run aws:up       # start Floci on http://localhost:4566
 npm run aws:deploy   # create IAM role, Lambda, API Gateway, CloudWatch log group and S3 bucket
 npm run aws:down     # stop the emulator
 ```
 
-`scripts/deploy-localstack.ps1` generates `frontend/js/config.js` with the deployed API Gateway URL and uploads the frontend to S3. The Lambda entry point is `backend/handler.js`, which wraps the same Express app with `@vendia/serverless-express`. Secrets are read from `backend/.env` and `.env.local` and injected into the Lambda environment; they are never printed or committed.
+`scripts/deploy-floci.ps1` generates `frontend/js/config.js` with the deployed API Gateway URL and uploads the frontend to S3. The Lambda entry point is `backend/handler.js`, which wraps the same Express app with `@vendia/serverless-express`. Secrets are read from `backend/.env` and `.env.local` and injected into the Lambda environment; they are never printed or committed.
 
-Verified on the emulator: API Gateway → Lambda → Neon end-to-end suite 16/16, structured JSON logs in CloudWatch, and S3 frontend HTTP 200.
+Verified on Floci: API Gateway → Lambda → Neon end-to-end suite 16/16, structured JSON logs in CloudWatch, and S3 frontend HTTP 200. The deployed API Gateway URL is written to `frontend/js/config.js` by the deploy script; do not hardcode it in the report because Floci generates a new API ID when the API is recreated.
 
 ---
 
@@ -481,9 +481,10 @@ A: The browser can read any frontend file, so only public values belong there. S
 - [ ] 409 `NOT_ELIGIBLE` response with `nextEligibleDate`
 - [ ] Browser screenshots: login/register, eligibility banner (eligible and waiting), profile, history
 - [ ] DevTools Network screenshot showing JWT in the Authorization header
-- [ ] Vercel Logs screenshot showing structured log events
-- [ ] `/api/auth/health`, `/ready` and `/metrics` responses from the deployed domain
+- [ ] Floci CloudWatch Logs screenshot showing structured log events
+- [ ] Floci service screenshots (Lambda function, IAM role, API Gateway, S3 bucket)
+- [ ] `/api/auth/health`, `/ready` and `/metrics` responses from the deployed API Gateway URL
 - [ ] GitHub commit history for this component
-- [ ] Deployed frontend and API URLs, demo video link
+- [ ] Deployed Floci frontend and API Gateway URLs, demo video link
 
 Fill the `Actual result` and `Evidence` columns of `docs/test-plan.md` from these artefacts, and complete the placeholders in `docs/individual-contribution.md` before submitting the report.

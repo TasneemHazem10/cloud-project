@@ -14,7 +14,7 @@
     "docker:logs": "docker compose logs -f",
     "docker:ps": "docker compose ps",
     "aws:up": "docker compose -f docker-compose.aws.yml up -d",
-    "aws:deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy-localstack.ps1",
+    "aws:deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy-floci.ps1",
     "aws:down": "docker compose -f docker-compose.aws.yml down"
   },
   "engines": {

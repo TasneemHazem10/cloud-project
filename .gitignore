@@ -8,4 +8,5 @@ coverage/
 .vercel/
 .neon
 .localstack/
+.floci/
 auth-api.zip

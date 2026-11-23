@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$container = 'localstack-blood-donation'
+$container = 'floci-blood-donation'
 $bucket = 'blood-donation-frontend'
 $function = 'auth-identity-api'
 $role = 'auth-lambda-role'
@@ -79,7 +79,7 @@ function New-LinuxZip {
   $stream.Dispose()
 }
 
-Write-Host 'Waiting for LocalStack health endpoint...'
+Write-Host 'Waiting for Floci health endpoint...'
 $healthy = $false
 for ($i = 0; $i -lt 45; $i++) {
   try {
@@ -93,9 +93,9 @@ for ($i = 0; $i -lt 45; $i++) {
   }
 }
 if (-not $healthy) {
-  throw 'LocalStack did not become healthy at http://localhost:4566.'
+  throw 'Floci did not become healthy at http://localhost:4566.'
 }
-Write-Host 'LocalStack is healthy.'
+Write-Host 'Floci is healthy.'
 
 $envVars = @{}
 foreach ($line in Get-Content (Join-Path $root 'backend\.env')) {
@@ -198,7 +198,7 @@ Write-Host "Deployed API Gateway REST API: $apiId (stage $stage)"
 
 $config = @"
 const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const isAwsEmulator = window.location.hostname.includes('localstack') || window.location.port === '4566';
+const isAwsEmulator = window.location.hostname.includes('floci') || window.location.port === '4566';
 
 const API_BASE_URL = isAwsEmulator
   ? '$invokeUrl/api/auth'
@@ -212,6 +212,7 @@ Set-Content -Path (Join-Path $root 'frontend\js\config.js') -Value $config -Enco
 
 Invoke-AwsLocal -AllowFailure s3 mb "s3://$bucket" | Out-Null
 Invoke-AwsLocal -AllowFailure s3 rm "s3://$bucket" --recursive | Out-Null
+& docker exec $container mkdir -p /tmp/frontend | Out-Null
 Invoke-DockerCp (Join-Path $root 'frontend\.') "${container}:/tmp/frontend/"
 Invoke-AwsLocal s3 cp /tmp/frontend/ "s3://$bucket/" --recursive | Out-Null
 Write-Host "Uploaded frontend to S3 bucket '$bucket'."
@@ -221,7 +222,7 @@ if ($health.StatusCode -ne 200) {
   throw "API Gateway health check failed with status $($health.StatusCode)."
 }
 
-Write-Host 'LocalStack deployment complete.'
+Write-Host 'Floci deployment complete.'
 Write-Host "API Gateway URL: $invokeUrl"
 Write-Host "S3 frontend URL: http://localhost:4566/$bucket/index.html"
 Write-Host "Lambda function: $function"
