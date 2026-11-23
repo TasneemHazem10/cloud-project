@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+.DS_Store
+.vercel/
+.neon
+.localstack/
+auth-api.zip

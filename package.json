@@ -1,0 +1,26 @@
+{
+  "name": "blood-donation-cloud-part",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authentication, identity, eligibility and monitoring service for the blood donation cloud project",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "start": "npm --prefix backend start",
+    "dev": "npm --prefix backend run dev",
+    "test": "npm --prefix backend test",
+    "deploy:neon": "neon deploy",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:ps": "docker compose ps",
+    "aws:up": "docker compose -f docker-compose.aws.yml up -d",
+    "aws:deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy-localstack.ps1",
+    "aws:down": "docker compose -f docker-compose.aws.yml down"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@neon/config": "^1.14.6"
+  }
+}

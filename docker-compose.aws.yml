@@ -1,0 +1,13 @@
+services:
+  localstack:
+    container_name: localstack-blood-donation
+    image: localstack/localstack:3.8.0
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,iam,lambda,apigateway,logs,sts
+      - LAMBDA_EXECUTOR=local
+      - DEBUG=0
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./.localstack:/var/lib/localstack"
