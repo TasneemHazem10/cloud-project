@@ -1,6 +1,6 @@
 # Integration Guide for Other Services
 
-Your component exposes two internal endpoints that use a shared secret instead of a donor JWT. Agree one value for `INTERNAL_SERVICE_TOKEN` with the Booking and check-in students, set it in the API's environment, and keep it out of source code.
+Your component exposes two internal endpoints that use a shared secret instead of a donor session token. Agree one value for `INTERNAL_SERVICE_TOKEN` with the Booking and check-in students, set it in the API's environment, and keep it out of source code.
 
 ## Shared rules
 
@@ -84,7 +84,7 @@ Rejection `409`:
 
 Possible errors: `400` validation, `401` bad service token, `404` donor not found, `409` not eligible.
 
-## C. Donor-facing JWT calls
+## C. Donor-facing session token calls
 
 The frontend never uses a service token. It sends `Authorization: Bearer <token>` and the donor ID is taken from the verified token, so a donor cannot read or modify another donor's data.
 
@@ -102,8 +102,8 @@ sequenceDiagram
   D->>F: Register / Login
   F->>A: POST /register or /login + Turnstile token
   A->>N: insert / read user + donor
-  A-->>F: JWT + profile
-  F->>A: GET /eligibility + JWT
+  A-->>F: session token + profile
+  F->>A: GET /eligibility + session token
   A->>N: last donation
   A-->>F: nextEligibleDate
   B->>A: GET /donors/{id}/eligibility + service token
@@ -112,7 +112,7 @@ sequenceDiagram
   A->>N: last donation before donatedAt
   A->>N: INSERT donation
   A-->>K: 201 donation
-  F->>A: GET /donations + JWT
+  F->>A: GET /donations + session token
   A-->>F: updated history
 ```
 

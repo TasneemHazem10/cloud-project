@@ -58,7 +58,7 @@ function createAuthController({ repository, passwordService, tokenService, eligi
         throw error;
       }
 
-      const issued = tokenService.sign({
+      const issued = await tokenService.create({
         userId: created.userId,
         email: created.email,
         donorId: created.donorId,
@@ -94,7 +94,7 @@ function createAuthController({ repository, passwordService, tokenService, eligi
         return res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' } });
       }
 
-      const issued = tokenService.sign({
+      const issued = await tokenService.create({
         userId: identity.userId,
         email: identity.email,
         donorId: identity.donorId,

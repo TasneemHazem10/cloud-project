@@ -13,9 +13,8 @@ Free plans are enough: Neon Free, Vercel Hobby, Cloudflare Turnstile free. Never
 1. Create a project and keep default `neondb`; choose a US East region to be close to Vercel's default region.
 2. In **Connection Details**, select branch `production`, database `neondb`, and copy the **pooled** connection string (hostname contains `-pooler`). This is the `DATABASE_URL` used by the app and by Vercel.
 3. Also copy the **direct** connection string (same host without `-pooler`). Use the direct one for schema migrations; the pooled one is for normal application traffic.
-4. Run the whole `backend/db/schema.sql` in the SQL Editor, or apply it with the direct connection string. Confirm `users`, `donors`, `donations` and the two indexes exist.
-5. Logging into the Neon website with GitHub is **not** the same as CLI authentication. Run `neon login` in a terminal and finish the browser flow. Confirm with `neon status`; it should show the linked project and branch.
-6. Install `npm i @neon/config` at the project root so `neon.ts` can be evaluated. Then run `neon deploy`. It applies `neon.ts`, reports `No changes` when the branch already matches the policy, and pulls `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_BRANCH`, `NEON_BRANCH_ID` and `NEON_FUNCTION_HOST_SUFFIX` into the root `.env.local` file.
+4. Run the whole `backend/db/schema.sql` in the SQL Editor, or apply it with the direct connection string. Confirm `users`, `donors`, `donations`, `sessions` and their indexes exist.
+5. Copy the pooled connection string into `backend/.env` locally and into the `DATABASE_URL` environment variable of each deployment. That single variable is the only Neon configuration the app needs.
 
 ## 3. Cloudflare Turnstile
 
@@ -37,18 +36,17 @@ Free plans are enough: Neon Free, Vercel Hobby, Cloudflare Turnstile free. Never
 | Name | Value |
 | --- | --- |
 | `DATABASE_URL` | Neon pooled connection string |
-| `JWT_SECRET` | long random value (≥32 chars) |
 | `TURNSTILE_SECRET_KEY` | real Cloudflare secret |
 | `CORS_ORIGINS` | `http://localhost:8080` initially; add the deployed frontend domain later |
 | `DONATION_INTERVAL_DAYS` | `56` |
 | `INTERNAL_SERVICE_TOKEN` | shared secret for Booking/check-in |
 | `METRICS_TOKEN` | shared secret for monitoring |
 | `NODE_ENV` | `production` |
-| `JWT_EXPIRES_IN` | `1h` |
+| `SESSION_EXPIRES_IN` | `1h` |
 
 5. Deploy. `server.js` exports the Express app, and `require.main === module` prevents `app.listen` from running inside Vercel.
 6. Verification:
-   - `<api-domain>/api/health` → `{"status":"ok","environment":"production"}`
+   - `<api-domain>/api/auth/health` → `{"status":"ok","environment":"production"}`
    - `<api-domain>/api/auth/ready` → 200 if the database is configured
    - `<api-domain>/` → endpoint list
 
@@ -78,7 +76,7 @@ If health works but readiness returns 503, the deployment is fine and `DATABASE_
 - Register/login with the real widget and confirm 201/200 in DevTools Network.
 - `GET /api/auth/metrics` with `X-Metrics-Token` shows non-zero counters.
 - Vercel → API → Logs shows JSON log lines with request IDs and named events.
-- Neon Tables shows the new `users`, `donors` and `donations` rows.
+- Neon Tables shows the new `users`, `donors`, `donations` and `sessions` rows.
 - Booking and check-in calls work with the shared service token (see `docs/integration.md`).
 
 ## 8. Docker (local or VM)
@@ -97,25 +95,34 @@ Docker is an alternative to running two local Node processes. It is useful for d
 
 This project also deploys the same service onto **Floci**, a free local AWS emulator that listens on port `4566`. No Floci account or auth token is needed. Docker Desktop must be running.
 
+One-time AWS CLI profile setup (dummy keys, like the labs):
+
 ```powershell
-npm run aws:up       # starts floci/floci:latest-compat as floci-blood-donation
-npm run aws:deploy   # creates the five AWS resources and uploads the frontend
+aws configure set aws_access_key_id test --profile floci
+aws configure set aws_secret_access_key test --profile floci
+aws configure set region us-east-1 --profile floci
+aws configure set endpoint_url http://localhost:4566 --profile floci
+```
+
+```powershell
+npm run aws:up       # starts floci/floci:latest-compat from infra/floci/docker-compose.yml
+npm run aws:deploy   # creates IAM, Lambda, HTTP API v2, CloudWatch log group and S3 frontend
 npm run aws:down     # stops/removes the Floci container
 ```
 
-`scripts/deploy-floci.ps1` reads `backend/.env` and the root `.env.local`, injects those values into the Lambda environment, creates the IAM role and CloudWatch log group, packages `backend/handler.js` into a zip, deploys the Lambda, creates a REST API with a `{proxy+}` ANY route, and copies `frontend/` into S3. It then writes `frontend/js/config.js` with the generated API Gateway URL. No secret value is printed.
+`scripts/deploy-floci.ps1` reads `backend/.env`, injects those values into the Lambda environment, creates the IAM role and CloudWatch log group, packages `backend/lambda.js` (`serverless-http`) into `backend/lambda.zip`, deploys Lambda with `nodejs24.x` / `lambda.handler`, creates an **API Gateway HTTP API v2** with explicit routes and stage `$default`, then uploads `frontend/` with `aws s3 sync`. It writes the generated invoke URL to `frontend/js/config.js`. No secret value is printed.
 
 Verification after deployment:
 
 ```powershell
 # Health through API Gateway (use the ID printed by npm run aws:deploy)
-curl.exe -i http://localhost:4566/restapis/API_ID/prod/_user_request_/api/auth/health
+curl.exe -i http://API_ID.execute-api.localhost.floci.io:4566/api/auth/health
 
 # Frontend from S3
 curl.exe -i http://localhost:4566/blood-donation-frontend/index.html
 ```
 
-Expected: health `200 {"status":"ok",...}` and frontend `200`. The end-to-end harness can be run against the emulator with `BASE_URL` set to the printed API Gateway URL. Successful checks: 16/16 through API Gateway → Lambda → Neon; CloudWatch log group `/aws/lambda/auth-identity-api` contains JSON request and event lines; S3 frontend returns HTTP 200.
+Expected: health `200 {"status":"ok",...}` and frontend `200`. On Floci Dash, HTTP APIs are not listed; verify with `aws apigatewayv2 get-apis`, `get-routes` and `get-stages`. The end-to-end harness can be run with `BASE_URL` set to the printed API Gateway URL. Verified: 16/16 through API Gateway → Lambda → Neon; CloudWatch log group `/aws/lambda/auth-identity-api` contains JSON request and event lines; S3 frontend returns HTTP 200.
 
 ## 10. Troubleshooting
 

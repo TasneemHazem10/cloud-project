@@ -7,6 +7,6 @@ coverage/
 .DS_Store
 .vercel/
 .neon
-.localstack/
 .floci/
 auth-api.zip
+backend/lambda.zip

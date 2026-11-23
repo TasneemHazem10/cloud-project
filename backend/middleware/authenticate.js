@@ -16,7 +16,7 @@ function createAuthMiddleware({ tokenService, repository, serviceToken, logger, 
     const bearer = /^Bearer\s+(.+)$/i.exec(authorization);
 
     if (bearer) {
-      const claims = tokenService.verify(bearer[1].trim());
+      const claims = await tokenService.verify(bearer[1].trim());
       if (!claims || !claims.sub) {
         metrics.increment('auth.invalid_token');
         return sendError(res, 401, 'UNAUTHORIZED', 'Invalid or expired token.');

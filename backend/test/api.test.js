@@ -5,7 +5,7 @@ const { before, after } = require('node:test');
 const { createApp } = require('../app');
 const { createAuthRepository } = require('../repositories/authRepository');
 const { createPasswordService } = require('../services/password');
-const { createTokenService } = require('../services/token');
+const { createSessionService } = require('../services/session');
 const { evaluateEligibility, MS_PER_DAY } = require('../services/eligibility');
 const { createMetrics } = require('../services/metrics');
 const { createAuthMiddleware } = require('../middleware/authenticate');
@@ -16,11 +16,8 @@ const METRICS_TOKEN = 'metrics-token-123';
 const repository = createFakeRepository();
 const logger = createSilentLogger();
 const metrics = createMetrics();
-const passwordService = createPasswordService(4);
-const tokenService = createTokenService({
-  secret: 'a-test-only-jwt-secret-that-is-long-enough',
-  expiresIn: '1h'
-});
+const passwordService = createPasswordService(1024);
+const tokenService = createSessionService({ repository, expiresIn: '1h' });
 const authMiddleware = createAuthMiddleware({
   tokenService,
   repository,
@@ -129,7 +126,7 @@ test('GET /api/auth/ready returns 200 when the database is reachable', async () 
   assert.equal(response.body.database, 'ok');
 });
 
-test('POST /api/auth/register creates a user and a donor and returns a JWT', async () => {
+test('POST /api/auth/register creates a user and a donor and returns a session token', async () => {
   const response = await api('/api/auth/register', { method: 'POST', body: registration });
   assert.equal(response.status, 201);
   assert.equal(response.body.user.email, 'tasneem@example.com');
@@ -198,7 +195,7 @@ test('POST /api/auth/login does not disclose unknown accounts', async () => {
   assert.equal(response.body.error.code, 'INVALID_CREDENTIALS');
 });
 
-test('POST /api/auth/login returns a signed token for valid credentials', async () => {
+test('POST /api/auth/login returns a stored session token for valid credentials', async () => {
   const response = await api('/api/auth/login', {
     method: 'POST',
     body: { email: 'TASNEEM@example.com', password: 'Blood2026' }
@@ -398,10 +395,12 @@ test('the repository layer exports all required data operations', () => {
   const directRepository = createAuthRepository(async () => []);
   assert.deepEqual(Object.keys(directRepository).sort(), [
     'checkDatabase',
+    'createSession',
     'createUserWithDonor',
     'emailExists',
     'findIdentityByDonorId',
     'findIdentityByUserId',
+    'findSessionByTokenHash',
     'findUserByEmail',
     'getLastDonation',
     'getLastDonationBefore',

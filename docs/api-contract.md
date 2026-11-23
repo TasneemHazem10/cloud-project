@@ -1,6 +1,6 @@
 # API Contract — Authentication, Identity, Eligibility and Monitoring
 
-Base URL: `http://localhost:3000/api/auth` locally, `https://<api-project>.vercel.app/api/auth` in the cloud.
+Base URL: `http://localhost:3000/api/auth` locally, `http://<api-id>.execute-api.localhost.floci.io:4566/api/auth` on Floci, or `https://<api-project>.vercel.app/api/auth` on Vercel.
 
 All request and response bodies are JSON. Timestamps are ISO 8601 UTC strings. IDs are UUIDs.
 
@@ -8,7 +8,7 @@ All request and response bodies are JSON. Timestamps are ISO 8601 UTC strings. I
 
 | Type | Header | Used for |
 | --- | --- | --- |
-| Donor JWT | `Authorization: Bearer <token>` | `/me`, `/profile`, `/eligibility`, `/donations`, own donation recording |
+| Donor session token | `Authorization: Bearer <token>` | `/me`, `/profile`, `/eligibility`, `/donations`, own donation recording |
 | Service token | `X-Service-Token: <shared secret>` | Booking eligibility lookup and check-in donation recording |
 | Metrics token | `X-Metrics-Token: <shared secret>` | `/metrics` when `METRICS_TOKEN` is configured |
 | Bot check | `X-Turnstile-Token: <token>` | `/register` and `/login` only |
@@ -19,13 +19,13 @@ Every response includes `X-Request-Id`. Send your own `X-Request-Id` to trace a 
 
 | # | Method | Path | Auth | Purpose | Success |
 | --- | --- | --- | --- | --- | --- |
-| 1 | POST | `/register` | Turnstile | Create user + donor, issue JWT | 201 |
-| 2 | POST | `/login` | Turnstile | Verify password, issue JWT | 200 |
-| 3 | GET | `/me` | JWT | Read own profile | 200 |
-| 4 | PUT | `/profile` | JWT | Update own donor profile | 200 |
-| 5 | GET | `/eligibility` | JWT | Own eligibility result | 200 |
-| 6 | GET | `/donations` | JWT | Own donation history | 200 |
-| 7 | POST | `/donations` | JWT or service | Record a donation (eligibility enforced) | 201 |
+| 1 | POST | `/register` | Turnstile | Create user + donor, issue session token | 201 |
+| 2 | POST | `/login` | Turnstile | Verify password, issue session token | 200 |
+| 3 | GET | `/me` | session token | Read own profile | 200 |
+| 4 | PUT | `/profile` | session token | Update own donor profile | 200 |
+| 5 | GET | `/eligibility` | session token | Own eligibility result | 200 |
+| 6 | GET | `/donations` | session token | Own donation history | 200 |
+| 7 | POST | `/donations` | session token or service | Record a donation (eligibility enforced) | 201 |
 | 8 | GET | `/donors/:donorId/eligibility` | service | Booking eligibility lookup | 200 |
 | 9 | GET | `/health` | none | Liveness | 200 |
 | 10 | GET | `/ready` | none | Database readiness | 200 / 503 |
@@ -84,11 +84,11 @@ Success `200`: same shape as register. Errors: 400 `VALIDATION_ERROR`, 401 `INVA
 
 ## 3. GET `/me`
 
-Requires donor JWT. Returns `{ user, donor }` exactly like the register response but without token fields. Errors: 401 `UNAUTHORIZED`, 404 `IDENTITY_NOT_FOUND`.
+Requires donor session token. Returns `{ user, donor }` exactly like the register response but without token fields. Errors: 401 `UNAUTHORIZED`, 404 `IDENTITY_NOT_FOUND`.
 
 ## 4. PUT `/profile`
 
-Requires donor JWT. At least one editable field must be supplied: `fullName`, `phone`, `bloodType`, `dateOfBirth`, `city`. `email`, `role` and IDs cannot be changed through this endpoint. Omitted fields keep their current values.
+Requires donor session token. At least one editable field must be supplied: `fullName`, `phone`, `bloodType`, `dateOfBirth`, `city`. `email`, `role` and IDs cannot be changed through this endpoint. Omitted fields keep their current values.
 
 ```json
 { "fullName": "Tasneem Ali Updated", "city": "Dubai" }
@@ -98,7 +98,7 @@ Success `200`: `{ user, donor }`. Errors: 400 `VALIDATION_ERROR`, 401 `UNAUTHORI
 
 ## 5. GET `/eligibility`
 
-Requires donor JWT. No body.
+Requires donor session token. No body.
 
 Success `200`:
 
@@ -119,7 +119,7 @@ Success `200`:
 
 ## 6. GET `/donations`
 
-Requires donor JWT. Returns the 100 newest donations.
+Requires donor session token. Returns the 100 newest donations.
 
 ```json
 {
@@ -135,7 +135,7 @@ An empty history is still `200` with `count: 0` and `donations: []`. Errors: 401
 
 ## 7. POST `/donations`
 
-Requires donor JWT (donor is taken from the token) **or** service token (`donorId` required in body).
+Requires donor session token (donor is taken from the token) **or** service token (`donorId` required in body).
 
 ```json
 { "donatedAt": "2026-01-01T10:00:00Z", "location": "City Clinic", "amountMl": 450 }

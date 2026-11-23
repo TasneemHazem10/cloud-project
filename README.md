@@ -12,8 +12,8 @@ No code comments are used anywhere in `backend/` or `frontend/`. Every design de
 | --- | --- |
 | Functions (more than three) | Register, Login, Donor profile (read + update), Eligibility check, Donation history, Record donation |
 | Screens | Register/Login screen, Profile screen, Eligibility banner, Donation history table |
-| Business logic | Next eligible date = last donation date + 56 days (configurable with `DONATION_INTERVAL_DAYS`), password hashing with bcrypt, JWT signed with HS256, eligibility enforced again when a donation is recorded |
-| Neon tables | `users`, `donors`, `donations` |
+| Business logic | Next eligible date = last donation date + 56 days (configurable with `DONATION_INTERVAL_DAYS`), password hashing with Node crypto scrypt, opaque sessions stored in Neon, eligibility enforced again when a donation is recorded |
+| Neon tables | `users`, `donors`, `donations`, `sessions` |
 | External service | Cloudflare Turnstile bot check on **register** and **login**; server-side verification against `siteverify` |
 | Integration | `GET /api/auth/donors/:donorId/eligibility` for the Booking service; `POST /api/auth/donations` with a service token for check-in |
 | Logging & monitoring | Structured JSON logs, request IDs, request/error/auth/donation/eligibility events, `/api/auth/health`, `/api/auth/ready`, `/api/auth/metrics`, security headers, rate limiting |
@@ -23,7 +23,7 @@ No code comments are used anywhere in `backend/` or `frontend/`. Every design de
 ```mermaid
 flowchart LR
   U[Donor browser] -->|HTTPS / JSON| W[Vercel CDN: frontend]
-  W -->|fetch + JWT| A[Vercel Function: Express API]
+  W -->|fetch + session token| A[Vercel Function: Express API]
   T[Cloudflare Turnstile siteverify] <-.->|token check| A
   B[Booking service] -->|X-Service-Token| A
   C[Check-in kiosk] -->|X-Service-Token| A
@@ -37,17 +37,17 @@ Cloud model: **PaaS/serverless**. The frontend is static on Vercel's CDN, the AP
 
 ```
 REGISTER: browser form -> Turnstile widget -> POST /api/auth/register + X-Turnstile-Token
-       -> API validates -> Cloudflare verifies token -> bcrypt hash -> INSERT users + donors
-       -> JWT issued -> 201 + token -> dashboard opens
+       -> API validates -> Cloudflare verifies token -> scrypt hash -> INSERT users + donors
+       -> session issued -> 201 + token -> dashboard opens
 ```
 
 ```
 LOGIN: POST /api/auth/login + X-Turnstile-Token -> Cloudflare verifies -> find user by email
-       -> bcrypt.compare -> JWT issued -> 200 + token
+       -> scrypt.verify -> session issued -> 200 + token
 ```
 
 ```
-ELIGIBILITY: GET /api/auth/eligibility (Bearer JWT) -> load last donation -> last + 56 days
+ELIGIBILITY: GET /api/auth/eligibility (Bearer session token) -> load last donation -> last + 56 days
        -> { eligible, nextEligibleDate, daysRemaining } -> banner updates
 ```
 
@@ -67,23 +67,24 @@ CHECK-IN: POST /api/auth/donations + X-Service-Token + { donorId, donatedAt, loc
 ├── .gitignore                        keeps .env and node_modules out of Git
 ├── backend/
 │   ├── app.js                        Express app factory (middleware, CORS, routes, errors)
-│   ├── server.js                     loads .env + config, builds dependencies, starts/export app
+│   ├── server.js                     loads .env + config, builds dependencies, starts/exports app
+│   ├── lambda.js                     Lambda entry point using serverless-http
 │   ├── config.js                     validates environment variables
 │   ├── .env.example                  template with safe test values and empty secrets
 │   ├── db/
-│   │   ├── schema.sql                users, donors, donations + indexes
+│   │   ├── schema.sql                users, donors, donations, sessions + indexes
 │   │   └── neon.js                   creates the Neon SQL tagged-template client
 │   ├── repositories/
 │   │   └── authRepository.js         all SQL queries (create/read/update/search)
 │   ├── services/
-│   │   ├── password.js               bcrypt hashing and comparison
-│   │   ├── token.js                  JWT sign/verify
+│   │   ├── password.js               scrypt hashing and comparison
+│   │   ├── session.js                stored-session create/verify
 │   │   ├── eligibility.js            pure 56-day calculation
 │   │   ├── metrics.js                in-memory counters
 │   │   └── logger.js                 JSON log writer
 │   ├── middleware/
 │   │   ├── turnstile.js              server-side Cloudflare verification
-│   │   ├── authenticate.js           Bearer JWT and service-token authentication
+│   │   ├── authenticate.js           Bearer session and service-token authentication
 │   │   ├── requestLogger.js          request ID, duration, status, counters
 │   │   ├── metricsAuth.js            protects /metrics with X-Metrics-Token
 │   │   └── errorHandler.js           404 and central error responses
@@ -101,6 +102,8 @@ CHECK-IN: POST /api/auth/donations + X-Service-Token + { donorId, donatedAt, loc
     └── package.json                  npm start -> local static server on 8080
 ```
 
+Deployment and scripts are in `infra/floci/docker-compose.yml`, `scripts/build.js` and `scripts/deploy-floci.ps1`.
+
 Detailed contracts are in `docs/api-contract.md`, `docs/data-model.md`, `docs/test-plan.md`, `docs/integration.md`, `docs/deployment.md` and `docs/individual-contribution.md`.
 
 ---
@@ -108,10 +111,10 @@ Detailed contracts are in `docs/api-contract.md`, `docs/data-model.md`, `docs/te
 ## 3. How this part was built, step by step
 
 1. **Defined the contract first.** I listed the resources (`auth`, `donors`, `donations`), chose nouns for paths, and wrote method, body, validation and status codes for each endpoint in `docs/api-contract.md`. This let the frontend and the other services be designed against a fixed interface.
-2. **Designed the data model.** I created three Neon tables: `users` holds credentials and role, `donors` holds profile data with a one-to-one `user_id` foreign key, `donations` holds history with a `donor_id` foreign key. A composite index on `(donor_id, donated_at DESC)` makes "last donation" and history queries fast. See `docs/data-model.md`.
+2. **Designed the data model.** I created four Neon tables: `users` holds credentials and role, `donors` holds profile data with a one-to-one `user_id` foreign key, `donations` holds history with a `donor_id` foreign key, and `sessions` stores hashed opaque session tokens with expiry. A composite index on `(donor_id, donated_at DESC)` makes "last donation" and history queries fast. See `docs/data-model.md`.
 3. **Split the backend into layers.** `routes` maps URLs, `controllers` handle HTTP and validation, `repositories` own SQL, `services` hold pure business logic. Because `app.js` is a factory that receives its dependencies, tests can inject a fake repository and run without a database or network.
-4. **Implemented password hashing.** `bcryptjs` hashes with a configurable cost (12 by default). Plain passwords are never stored or logged. Login compares with `bcrypt.compare`.
-5. **Implemented JWT authentication.** `jsonwebtoken` signs HS256 tokens containing `sub` (user id), `email`, `donorId` and `role`, with issuer/audience checks and expiry. The auth middleware verifies the signature, then loads the identity from Neon so a deleted user cannot keep using an old token.
+4. **Implemented password hashing.** Node `crypto.scrypt` hashes with a configurable cost (16384 by default) and a random salt. Plain passwords are never stored or logged. Login recomputes and compares the derived key with `timingSafeEqual`.
+5. **Implemented stored-session authentication.** A 32-byte random token is returned to the browser; only its SHA-256 hash is stored in the Neon `sessions` table with a user id and expiry. The auth middleware looks up the hash and loads the identity from Neon, so a deleted user or expired session cannot keep using an old token.
 6. **Implemented the eligibility rule as a pure function.** `evaluateEligibility(lastDonatedAt, now, intervalDays)` adds 56 days to the last donation using UTC milliseconds, returns `eligible`, `reason`, `nextEligibleDate`, `daysRemaining` and `lastDonatedAt`. Pure functions are easy to unit-test and are reused by the banner, the Booking endpoint and the donation check-in.
 7. **Added the hard part of the business rule.** Recording a donation calls eligibility again. If a check-in sends a backdated `donatedAt`, the repository queries the last donation **before that timestamp** (`getLastDonationBefore`), so a future record cannot incorrectly block a historical one. This bug was found by the automated tests and fixed.
 8. **Added Turnstile on the trust boundary.** The widget sends a token in `X-Turnstile-Token`; the server calls Cloudflare `siteverify` with the secret key and a 5-second timeout before register/login logic runs. A missing secret fails closed with 500; a failed token returns 403. An optional hostname check prevents a widget from another site being replayed.
@@ -135,7 +138,7 @@ Detailed contracts are in `docs/api-contract.md`, `docs/data-model.md`, `docs/te
 ### 4.2 Create the database
 
 1. In Neon create a project (name it for your team) and keep the default `neondb` database and a US East region.
-2. Open **SQL Editor**, paste all of `backend/db/schema.sql`, and run it. Confirm the three tables and the two indexes exist.
+2. Open **SQL Editor**, paste all of `backend/db/schema.sql`, and run it. Confirm the four tables and their indexes exist.
 3. Copy the pooled connection string from **Connect**. It looks like `postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/neondb?sslmode=require`.
 
 ### 4.3 Configure the backend
@@ -151,7 +154,8 @@ Edit `backend/.env`:
 | Variable | Local value |
 | --- | --- |
 | `DATABASE_URL` | the Neon connection string from step 4.2 |
-| `JWT_SECRET` | generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `SESSION_EXPIRES_IN` | `1h` (also accepts `30m`, `7d` or seconds) |
+| `PASSWORD_SCRYPT_COST` | `16384` |
 | `TURNSTILE_SECRET_KEY` | keep the test key `1x0000000000000000000000000000000AA` for localhost |
 | `CORS_ORIGINS` | `http://localhost:8080` |
 | `INTERNAL_SERVICE_TOKEN` | any long random string shared with Booking/check-in teams |
@@ -179,7 +183,7 @@ Open `http://localhost:8080`. The API is on `http://localhost:3000/api/auth`. Co
 
 The frontend's `config.js` automatically uses the localhost API and the official Turnstile test site key `1x00000000000000000000AA` when `window.location.hostname` is `localhost` or `127.0.0.1`.
 
-### 4.5 Build and Neon CLI
+### 4.5 Build
 
 Run these from the project root:
 
@@ -189,9 +193,9 @@ npm test
 npm start
 ```
 
-`npm run build` syntax-checks every JavaScript file, validates the JSON files, and checks that all required files exist. The app already talks to Neon through `DATABASE_URL`, so the Neon CLI is optional for normal runs. If you want the CLI-managed env pull, run `neon login` in a terminal and finish the browser flow (logging into the Neon website with GitHub is not enough), then run `npm i @neon/config` and `neon deploy`. It applies `neon.ts` and writes the branch's Neon variables into the root `.env.local` file.
+`npm run build` syntax-checks every JavaScript file, validates the JSON files, and checks that all required files exist. The app talks to Neon directly through `DATABASE_URL` in `backend/.env` (or the Vercel/Lambda environment).
 
-The `production` branch already has `users`, `donors` and `donations` plus both indexes. The end-to-end run created one user, one donor and three donation rows in Neon.
+The production database has `users`, `donors`, `donations` and `sessions` plus their indexes. The end-to-end run creates a user, a donor, a stored session and donation rows in Neon.
 
 ### 4.6 Run with Docker
 
@@ -211,7 +215,7 @@ npm run docker:logs
 npm run docker:down
 ```
 
-`docker-compose.yml` passes `backend/.env` and the Neon-pulled `.env.local` into the API container with `env_file`, so secrets are never copied into the image and fresh Neon values take precedence. If you change either file, recreate the API container:
+`docker-compose.yml` passes `backend/.env` into the API container with `env_file`, so secrets are never copied into the image. If you change it, recreate the API container:
 
 ```powershell
 docker compose up -d --force-recreate api
@@ -219,7 +223,7 @@ docker compose up -d --force-recreate api
 
 ### AWS emulator deployment (Floci)
 
-The emulator used for this part is **Floci** (`floci/floci:latest-compat`) on `http://localhost:4566`. Five AWS services belong to this student's part: **API Gateway (REST API), Lambda, IAM, CloudWatch Logs and S3**. Neon remains the external Postgres database and Cloudflare Turnstile the external bot-protection API.
+The emulator used for this part is **Floci** (`floci/floci:latest-compat`) on `http://localhost:4566`, started from `infra/floci/docker-compose.yml`. Five AWS services belong to this student's part: **API Gateway HTTP API (v2), Lambda, IAM, CloudWatch Logs and S3**. Neon remains the external Postgres database and Cloudflare Turnstile the external bot-protection API.
 
 ```powershell
 npm run aws:up       # start Floci on http://localhost:4566
@@ -227,7 +231,16 @@ npm run aws:deploy   # create IAM role, Lambda, API Gateway, CloudWatch log grou
 npm run aws:down     # stop the emulator
 ```
 
-`scripts/deploy-floci.ps1` generates `frontend/js/config.js` with the deployed API Gateway URL and uploads the frontend to S3. The Lambda entry point is `backend/handler.js`, which wraps the same Express app with `@vendia/serverless-express`. Secrets are read from `backend/.env` and `.env.local` and injected into the Lambda environment; they are never printed or committed.
+One-time setup creates the lab AWS CLI profile:
+
+```powershell
+aws configure set aws_access_key_id test --profile floci
+aws configure set aws_secret_access_key test --profile floci
+aws configure set region us-east-1 --profile floci
+aws configure set endpoint_url http://localhost:4566 --profile floci
+```
+
+`scripts/deploy-floci.ps1` uses that `floci` profile. It packages `backend/lambda.js` (three-line `serverless-http` wrapper), creates the Lambda with `nodejs24.x` / `lambda.handler`, builds an API Gateway **HTTP API v2** with explicit routes and the `$default` stage, writes `frontend/js/config.js` with the generated invoke URL, and uploads the frontend with `aws s3 sync`. Secrets are read only from `backend/.env` and injected into the Lambda environment; they are never printed or committed.
 
 Verified on Floci: API Gateway → Lambda → Neon end-to-end suite 16/16, structured JSON logs in CloudWatch, and S3 frontend HTTP 200. The deployed API Gateway URL is written to `frontend/js/config.js` by the deploy script; do not hardcode it in the report because Floci generates a new API ID when the API is recreated.
 
@@ -239,9 +252,9 @@ These need your accounts, secrets or deployed URLs, so I could not finish them i
 
 | # | Manual task | Where | What to send me afterwards |
 | --- | --- | --- | --- |
-| 1 | Create the Neon project and run `backend/db/schema.sql` | neon.com → SQL Editor | Confirmation that three tables exist (screenshot) |
+| 1 | Create the Neon project and run `backend/db/schema.sql` | neon.com → SQL Editor | Confirmation that four tables exist (screenshot) |
 | 2 | Copy your real Neon connection string into `backend/.env` | local file only | **Do not send the password.** Send only the host/region if you need help |
-| 3 | Generate a real `JWT_SECRET`, `INTERNAL_SERVICE_TOKEN` and `METRICS_TOKEN` | local `.env` + Vercel dashboard | Confirmation they are set; never send the values |
+| 3 | Generate real `INTERNAL_SERVICE_TOKEN` and `METRICS_TOKEN` values | local `.env` + deployment environment variables | Confirmation they are set; never send the values |
 | 4 | Create a Cloudflare Turnstile widget for your deployed frontend hostname | Cloudflare → Turnstile → Add widget | The **public site key** (safe to share) and confirmation the secret is in Vercel only |
 | 5 | Replace `YOUR-TURNSTILE-SITE-KEY` in `frontend/js/config.js` | local file | Tell me your site key and I can update it |
 | 6 | Import `backend` as Vercel project (API) and set env vars | vercel.com | Deployed API domain, e.g. `...vercel.app` |
@@ -253,7 +266,7 @@ These need your accounts, secrets or deployed URLs, so I could not finish them i
 | 12 | Record the demo video on the deployed URL | screen recorder | Link for the report |
 | 13 | Agree the service token with the Booking and check-in students | team chat | Confirmation so I can note the integration as tested |
 
-Security rule: **never paste `DATABASE_URL`, `JWT_SECRET`, `TURNSTILE_SECRET_KEY`, `INTERNAL_SERVICE_TOKEN` or `METRICS_TOKEN` into GitHub, screenshots, chat or the report.** The site key is public by design.
+Security rule: **never paste `DATABASE_URL`, `TURNSTILE_SECRET_KEY`, `INTERNAL_SERVICE_TOKEN` or `METRICS_TOKEN` into GitHub, screenshots, chat or the report.** The site key is public by design. Rotate the Neon password if it was ever pasted into chat.
 
 ---
 
@@ -262,10 +275,9 @@ Security rule: **never paste `DATABASE_URL`, `JWT_SECRET`, `TURNSTILE_SECRET_KEY
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | - | Neon Postgres connection used by every data operation |
-| `JWT_SECRET` | Yes | - | HMAC key for signing tokens; must be at least 32 characters |
 | `TURNSTILE_SECRET_KEY` | Yes | - | Private key sent to Cloudflare `siteverify` |
-| `JWT_EXPIRES_IN` | No | `1h` | Token lifetime |
-| `BCRYPT_ROUNDS` | No | `12` | Password hashing cost (4–15) |
+| `SESSION_EXPIRES_IN` | No | `1h` | Lifetime of an opaque stored session |
+| `PASSWORD_SCRYPT_COST` | No | `16384` | scrypt cost (1024–1048576) |
 | `DONATION_INTERVAL_DAYS` | No | `56` | Minimum days between donations |
 | `CORS_ORIGINS` | No | `http://localhost:8080` | Comma-separated browser origins |
 | `TURNSTILE_EXPECTED_HOSTNAME` | No | empty | If set, the verified token's hostname must match |
@@ -289,7 +301,7 @@ cd backend
 npm test
 ```
 
-Expected: `tests 34`, `pass 34`, `fail 0`. These cover health/readiness, registration success/validation/duplicate/bot check, login success and failures, JWT protection, profile read/update, eligibility with no donation and inside the 56-day window, donation recording, 409 rejection, history ordering, Booking service call, check-in service call, metrics protection and 404 handling. The eligibility unit tests cover 55 days, exactly 56 days, no donation and a configurable interval.
+Expected: `tests 34`, `pass 34`, `fail 0`. These cover health/readiness, registration success/validation/duplicate/bot check, login success and failures, session-token protection, profile read/update, eligibility with no donation and inside the 56-day window, donation recording, 409 rejection, history ordering, Booking service call, check-in service call, metrics protection and 404 handling. The eligibility unit tests cover 55 days, exactly 56 days, no donation and a configurable interval.
 
 ### 7.2 Manual API tests against real Neon (Postman or curl)
 
@@ -341,12 +353,12 @@ A Postman collection is not required, but the table in `docs/test-plan.md` gives
 6. In Neon, open the `donations` table and insert a row for your donor with `donated_at` = today. Reload the dashboard: the banner turns amber, shows about 56 days remaining and the next eligible date.
 7. Use the API to record another donation today: it returns 409 `NOT_ELIGIBLE`. This is the business rule being enforced server-side, not only in the UI.
 8. Confirm the donation history table shows the new row sorted newest first.
-9. Open DevTools → Network: check `POST /register`, `POST /login`, `GET /me`, `GET /eligibility`, `GET /donations` and their status codes. Check that the JWT appears in the `Authorization` request header and that no password appears anywhere.
+9. Open DevTools → Network: check `POST /register`, `POST /login`, `GET /me`, `GET /eligibility`, `GET /donations` and their status codes. Check that the opaque session token appears in the `Authorization` request header and that no password appears anywhere.
 10. Log out: the token is removed from `sessionStorage` and the protected calls cannot be made.
 
 ### 7.4 Cloud tests after deployment
 
-1. `GET <api-domain>/api/health` → 200 `{"status":"ok",...}`.
+1. `GET <api-domain>/api/auth/health` → 200 `{"status":"ok",...}`.
 2. `GET <api-domain>/api/auth/ready` → 200 if `DATABASE_URL` is correct; 503 if the database is unreachable.
 3. `GET <api-domain>/api/auth/health` in a browser → 200; opening the API root shows the endpoint list.
 4. Open the frontend domain, register and log in with **real** Turnstile keys. A missing widget token must show "Please complete the bot check first."
@@ -386,8 +398,8 @@ A Postman collection is not required, but the table in `docs/test-plan.md` gives
 
 ## 9. Security decisions you can defend
 
-- bcrypt (cost 12) instead of plain text or fast hashes, because password hashes must be slow to brute force.
-- JWT with HS256, expiry, issuer and audience; the middleware re-checks the user in the database on every protected request.
+- scrypt with a random salt and configurable cost instead of plain text or fast hashes, because password hashes must be slow to brute force.
+- Opaque random session tokens stored as SHA-256 hashes in Neon with an expiry; only the hash is kept in the database and the middleware re-checks the user on every protected request.
 - Tokens are kept in `sessionStorage`, not `localStorage`, so they disappear when the tab closes.
 - Turnstile is verified on the server. A widget alone protects nothing because a bot can call the API directly.
 - Generic `INVALID_CREDENTIALS` response avoids account enumeration; service-token comparison uses `timingSafeEqual`.
@@ -403,8 +415,8 @@ A Postman collection is not required, but the table in `docs/test-plan.md` gives
 **Q: What does your component do?**
 A: It owns identity (register, login, profile), the donor-facing eligibility and donation history screens, and the operational logging/monitoring endpoints. It also exposes internal endpoints for Booking and check-in.
 
-**Q: Why three tables?**
-A: `users` holds authentication data, `donors` holds profile data (one-to-one with users), and `donations` holds the history (one-to-many from donors). Splitting users and donors means we can add staff/admin accounts without giving them donor profiles.
+**Q: Why four tables?**
+A: `users` holds authentication data, `donors` holds profile data (one-to-one with users), `donations` holds the history (one-to-many from donors), and `sessions` holds hashed session tokens with expiry. Splitting users and donors means we can add staff/admin accounts without giving them donor profiles.
 
 **Q: How is the next eligible date calculated?**
 A: `lastDonatedAt + DONATION_INTERVAL_DAYS` in UTC milliseconds (default 56). If there is no previous donation, the donor is eligible immediately and `nextEligibleDate` is null. Days remaining is rounded up so a donor is never told "0 days" while still blocked.
@@ -413,7 +425,7 @@ A: `lastDonatedAt + DONATION_INTERVAL_DAYS` in UTC milliseconds (default 56). If
 A: `now >= due`, so the donor is eligible. There is a unit test for this boundary.
 
 **Q: How do you stop someone from forging a donation history entry or forging eligibility?**
-A: History and profile are keyed to the donor ID inside the verified JWT, not to an ID from the browser. Only service calls with the shared service token may pass an explicit `donorId`, and they still go through the same eligibility rule.
+A: History and profile are keyed to the donor ID inside the verified session, not to an ID from the browser. Only service calls with the shared service token may pass an explicit `donorId`, and they still go through the same eligibility rule.
 
 **Q: Where is the 56-day rule enforced?**
 A: In the pure `eligibility.js` service. It is used by the donor banner, the Booking endpoint and the donation recording check-in, so the three paths cannot disagree.
@@ -424,11 +436,11 @@ A: A booking may be made days before the actual donation. The check-in is the mo
 **Q: Why does a backdated donation use `getLastDonationBefore`?**
 A: If a check-in imports a donation dated 100 days ago while a newer donation exists, the newer one must not be used as the "previous donation". Filtering by timestamp keeps historical imports correct. This was a real bug caught by the test suite and fixed.
 
-**Q: Why bcrypt and not SHA-256?**
-A: SHA-256 is fast and vulnerable to brute force/GPU attacks. bcrypt is deliberately slow and salted; the cost is configurable.
+**Q: Why scrypt and not SHA-256?**
+A: SHA-256 is fast and vulnerable to brute force/GPU attacks. scrypt is deliberately slow, salted and has a configurable cost (Lab 8 pattern).
 
-**Q: What is in the JWT and how is it invalidated?**
-A: `sub`, `email`, `donorId`, `role`, `iat`, `exp`, issuer and audience. It expires after `JWT_EXPIRES_IN` (default 1 hour); logout removes it from the browser. Deleting the user also makes it fail because the middleware reloads the identity.
+**Q: What is in a session and how is it invalidated?**
+A: The browser receives a 32-byte random token. Neon stores only its SHA-256 hash, the user id and an expiry. It expires after `SESSION_EXPIRES_IN` (default 1 hour); logout removes it from the browser. Deleting the user removes the session by cascade and the middleware also reloads the identity.
 
 **Q: How does Turnstile actually protect you?**
 A: The browser widget produces a one-time token. The server sends that token plus the secret key to Cloudflare's `siteverify`. Only a `success: true` response allows register/login. Missing secret fails closed.
@@ -464,7 +476,7 @@ A: The browser can read any frontend file, so only public values belong there. S
 | Limitation | Reason | Improvement |
 | --- | --- | --- |
 | Metrics counters are in memory and reset per serverless instance | Vercel functions are ephemeral | Send metrics to a managed store or Vercel Log Drains and add alerts |
-| JWT cannot be revoked before expiry without extra state | Stateless tokens | Add a token version column or a Redis deny-list |
+| Sessions add a database lookup per protected request | Stored server-side state | Indexed by primary key; this is the Lab 8 pattern and allows revocation |
 | Eligibility uses a fixed day interval and does not check age, weight or medical deferrals | Scope was the 56-day rule | Add deferral rules as configuration and data fields |
 | Donation history is capped at 100 rows | Keeps the dashboard light | Add pagination and filtering |
 | Real Turnstile keys must use the registered hostname | Cloudflare design | Register every deployment hostname or use a wildcard pattern |
@@ -475,12 +487,12 @@ A: The browser can read any frontend file, so only public values belong there. S
 
 ## 12. Evidence checklist for the report
 
-- [ ] Neon tables screenshot (`users`, `donors`, `donations`) after a registration and a donation
+- [ ] Neon tables screenshot (`users`, `donors`, `donations`, `sessions`) after a registration and a donation
 - [ ] Postman/curl request + response for register, login, eligibility, history, profile update and both internal endpoints
 - [ ] Turnstile failure response without a token (403)
 - [ ] 409 `NOT_ELIGIBLE` response with `nextEligibleDate`
 - [ ] Browser screenshots: login/register, eligibility banner (eligible and waiting), profile, history
-- [ ] DevTools Network screenshot showing JWT in the Authorization header
+- [ ] DevTools Network screenshot showing the opaque session token in the Authorization header
 - [ ] Floci CloudWatch Logs screenshot showing structured log events
 - [ ] Floci service screenshots (Lambda function, IAM role, API Gateway, S3 bucket)
 - [ ] `/api/auth/health`, `/ready` and `/metrics` responses from the deployed API Gateway URL

@@ -167,6 +167,24 @@ function createAuthRepository(sql) {
     return rows[0] || null;
   }
 
+  async function createSession(input) {
+    await sql`
+      INSERT INTO sessions (token_hash, user_id, expires_at)
+      VALUES (${input.tokenHash}, ${input.userId}, ${input.expiresAt})
+    `;
+    return true;
+  }
+
+  async function findSessionByTokenHash(tokenHash) {
+    const rows = await sql`
+      SELECT user_id AS "userId", expires_at AS "expiresAt"
+      FROM sessions
+      WHERE token_hash = ${tokenHash}
+      LIMIT 1
+    `;
+    return rows[0] || null;
+  }
+
   async function checkDatabase() {
     await sql`SELECT 1 AS ok`;
     return true;
@@ -176,6 +194,8 @@ function createAuthRepository(sql) {
     findUserByEmail,
     emailExists,
     createUserWithDonor,
+    createSession,
+    findSessionByTokenHash,
     findIdentityByUserId,
     findIdentityByDonorId,
     updateDonorProfile,

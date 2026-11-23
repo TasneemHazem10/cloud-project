@@ -10,27 +10,22 @@ function parseInteger(value, fallback) {
 }
 
 function loadConfig(env = process.env) {
-  const required = ['DATABASE_URL', 'JWT_SECRET', 'TURNSTILE_SECRET_KEY'];
+  const required = ['DATABASE_URL', 'TURNSTILE_SECRET_KEY'];
   const missing = required.filter((name) => !env[name] || !String(env[name]).trim());
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
-  const jwtSecret = String(env.JWT_SECRET);
-  if (jwtSecret.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters long.');
-  }
-
   const donationIntervalDays = parseInteger(env.DONATION_INTERVAL_DAYS, 56);
-  const bcryptRounds = parseInteger(env.BCRYPT_ROUNDS, 12);
+  const passwordScryptCost = parseInteger(env.PASSWORD_SCRYPT_COST, 16384);
   const rateLimitMax = parseInteger(env.RATE_LIMIT_MAX, 20);
   const rateLimitWindowMs = parseInteger(env.RATE_LIMIT_WINDOW_MS, 900000);
 
   if (donationIntervalDays < 1 || donationIntervalDays > 365) {
     throw new Error('DONATION_INTERVAL_DAYS must be between 1 and 365.');
   }
-  if (bcryptRounds < 4 || bcryptRounds > 15) {
-    throw new Error('BCRYPT_ROUNDS must be between 4 and 15.');
+  if (passwordScryptCost < 1024 || passwordScryptCost > 1048576) {
+    throw new Error('PASSWORD_SCRYPT_COST must be between 1024 and 1048576.');
   }
 
   const corsOrigins = String(env.CORS_ORIGINS || 'http://localhost:8080')
@@ -42,9 +37,8 @@ function loadConfig(env = process.env) {
     port: parseInteger(env.PORT, 3000),
     environment: String(env.NODE_ENV || 'development'),
     databaseUrl: String(env.DATABASE_URL).trim(),
-    jwtSecret,
-    jwtExpiresIn: String(env.JWT_EXPIRES_IN || '1h'),
-    bcryptRounds,
+    sessionExpiresIn: String(env.SESSION_EXPIRES_IN || '1h'),
+    passwordScryptCost,
     donationIntervalDays,
     corsOrigins,
     turnstileSecretKey: String(env.TURNSTILE_SECRET_KEY).trim(),

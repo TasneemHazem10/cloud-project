@@ -23,7 +23,7 @@ This student owns one coherent business capability: **donor identity and eligibi
 2. Eligibility and donation-history logic — calculate next eligible date and enforce the 56-day rule.
 3. Observability and protection — structured logs, health/readiness/metrics, bot check, validation, rate limiting and security headers.
 
-This is **not a CRUD-only service**. It applies real business rules (password hashing, bot verification, JWT identity checks, 56-day eligibility, backdated-donation handling and donation limits). It also communicates with other services through documented internal HTTP endpoints.
+This is **not a CRUD-only service**. It applies real business rules (password hashing, bot verification, session token identity checks, 56-day eligibility, backdated-donation handling and donation limits). It also communicates with other services through documented internal HTTP endpoints.
 
 ---
 
@@ -32,7 +32,7 @@ This is **not a CRUD-only service**. It applies real business rules (password ha
 | Layer | Files/components in this part | Responsibility |
 | --- | --- | --- |
 | Presentation | `frontend/index.html`, `frontend/css/styles.css`, `frontend/js/app.js`, `frontend/js/config.js`, `frontend/vercel.json` | Four screens: register/login, profile, eligibility banner, donation history. Sends HTTP requests and renders only server data. |
-| Application / service | `backend/app.js`, `backend/server.js`, `backend/config.js`, `backend/routes/`, `backend/controllers/`, `backend/services/`, `backend/middleware/`, `backend/utils/` | Validation, Turnstile verification, bcrypt hashing, JWT issue/verify, eligibility calculation, donation checks, logging, metrics, error handling, CORS and rate limiting. |
+| Application / service | `backend/app.js`, `backend/server.js`, `backend/config.js`, `backend/routes/`, `backend/controllers/`, `backend/services/`, `backend/middleware/`, `backend/utils/` | Validation, Turnstile verification, scrypt hashing, session token issue/verify, eligibility calculation, donation checks, logging, metrics, error handling, CORS and rate limiting. |
 | Data | `backend/db/schema.sql`, `backend/db/neon.js`, `backend/repositories/authRepository.js`, Neon Postgres tables | Persistent `users`, `donors` and `donations` data. The repository isolates all SQL from the controllers. |
 
 ### Architecture diagram including cloud services and external API
@@ -49,7 +49,7 @@ flowchart TB
   subgraph Application
     APIGW[API Gateway HTTP API on Floci]
     LAMBDA[Node.js Express API in Lambda]
-    MW[Middleware: Turnstile, JWT, service token, validation]
+    MW[Middleware: Turnstile, session token, service token, validation]
     CTRL[Controllers + services: 56-day rule, logging, metrics]
     APIGW --> LAMBDA --> MW --> CTRL
   end
@@ -85,12 +85,12 @@ This suits a small coursework system because free/low-cost tiers are enough, sec
 ## 3. Three meaningful functionalities owned by this student
 
 ### Function 1 — Secure identity lifecycle
-- `POST /register` creates a `users` row with a bcrypt hash and a linked `donors` row in one database CTE, then issues a JWT.
-- `POST /login` verifies the password with bcrypt and issues a JWT.
+- `POST /register` creates a `users` row with a scrypt hash and a linked `donors` row in one database CTE, then issues a session token.
+- `POST /login` verifies the password with scrypt and issues a session token.
 - `GET /me` and `PUT /profile` read and update the authenticated donor's profile.
 - Every register/login request must first pass Cloudflare Turnstile server-side verification.
 - A missing Turnstile secret fails closed with 500; a missing or failed token returns 403.
-- JWTs contain `sub`, `email`, `donorId` and `role`, with expiry, issuer and audience checks. Each protected request also reloads the identity from Neon so a deleted account cannot keep using an old token.
+- session tokens contain `sub`, `email`, `donorId` and `role`, with expiry, issuer and audience checks. Each protected request also reloads the identity from Neon so a deleted account cannot keep using an old token.
 
 **Business logic, not CRUD:** salted slow hashing, bot prevention, token identity checks, duplicate-email handling and strict input validation.
 
@@ -116,19 +116,19 @@ This suits a small coursework system because free/low-cost tiers are enough, sec
 
 ## 4. Internal and external HTTP requests
 
-Base URL: `https://<api-domain>/api/auth` in the cloud, `http://localhost:3000/api/auth` locally.
+Base URL: API Gateway invoke URL + `/api/auth` on Floci, `http://localhost:3000/api/auth` locally.
 
 All bodies are JSON. Timestamps are ISO 8601 UTC. IDs are UUIDs. Every response includes `X-Request-Id`.
 
 | # | Method | Path | Auth | Request data | Success | Key errors |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | POST | `/register` | Turnstile token | `fullName`, `email`, `password`, optional `phone`, `bloodType`, `dateOfBirth`, `city` | 201 JWT + user + donor | 400 validation, 403 bot check, 409 duplicate email, 429 rate limit |
-| 2 | POST | `/login` | Turnstile token | `email`, `password` | 200 JWT + profile | 400 validation, 403 bot check, 401 invalid credentials |
-| 3 | GET | `/me` | Bearer JWT | none | 200 user + donor | 401 unauthorised, 404 identity missing |
-| 4 | PUT | `/profile` | Bearer JWT | at least one of `fullName`, `phone`, `bloodType`, `dateOfBirth`, `city` | 200 updated profile | 400 validation, 401 unauthorised |
-| 5 | GET | `/eligibility` | Bearer JWT | none | 200 eligibility object | 401 unauthorised |
-| 6 | GET | `/donations` | Bearer JWT | none | 200 `{ donorId, count, donations }` | 401 unauthorised |
-| 7 | POST | `/donations` | Bearer JWT or service token | `donatedAt?`, `location?`, `amountMl`, plus `donorId` for service calls | 201 donation | 400 validation, 409 not eligible |
+| 1 | POST | `/register` | Turnstile token | `fullName`, `email`, `password`, optional `phone`, `bloodType`, `dateOfBirth`, `city` | 201 session token + user + donor | 400 validation, 403 bot check, 409 duplicate email, 429 rate limit |
+| 2 | POST | `/login` | Turnstile token | `email`, `password` | 200 session token + profile | 400 validation, 403 bot check, 401 invalid credentials |
+| 3 | GET | `/me` | Bearer session token | none | 200 user + donor | 401 unauthorised, 404 identity missing |
+| 4 | PUT | `/profile` | Bearer session token | at least one of `fullName`, `phone`, `bloodType`, `dateOfBirth`, `city` | 200 updated profile | 400 validation, 401 unauthorised |
+| 5 | GET | `/eligibility` | Bearer session token | none | 200 eligibility object | 401 unauthorised |
+| 6 | GET | `/donations` | Bearer session token | none | 200 `{ donorId, count, donations }` | 401 unauthorised |
+| 7 | POST | `/donations` | Bearer session token or service token | `donatedAt?`, `location?`, `amountMl`, plus `donorId` for service calls | 201 donation | 400 validation, 409 not eligible |
 | 8 | GET | `/donors/:donorId/eligibility` | Service token | `donorId` in path | 200 same eligibility object | 400 invalid UUID, 401 bad service token, 404 donor missing |
 | 9 | GET | `/health` | none | none | 200 `{ status:"ok", ... }` | — |
 | 10 | GET | `/ready` | none | none | 200 `{ status:"ready", database:"ok" }` | 503 database unavailable |
@@ -174,6 +174,7 @@ Database: **Neon Postgres**, database `neondb`, branch `production`.
 ```mermaid
 erDiagram
   USERS ||--o| DONORS : "has one"
+  USERS ||--o{ SESSIONS : "has many"
   DONORS ||--o{ DONATIONS : "has many"
   USERS {
     uuid id PK
@@ -202,9 +203,15 @@ erDiagram
     integer amount_ml
     timestamptz created_at
   }
+  SESSIONS {
+    text token_hash PK
+    uuid user_id FK
+    timestamptz created_at
+    timestamptz expires_at
+  }
 ```
 
-**Ownership:** all three tables are owned by this service. Booking and Check-in do not own tables; they call this service's HTTP endpoints using `donorId` and the shared service token.
+**Ownership:** all four tables are owned by this service. Booking and Check-in do not own tables; they call this service's HTTP endpoints using `donorId` and the shared service token.
 
 | Operation | Implementation | Used by |
 | --- | --- | --- |
@@ -242,7 +249,7 @@ Evidence: `[CLOUDFLARE WIDGET SCREENSHOT]`, `[TURNSTILE 403 SCREENSHOT]`, `[CLOU
 The frontend is plain HTML, CSS and JavaScript — no React and no hard-coded donor records.
 
 - `index.html` contains the four screens: login/register with tabs, profile, eligibility banner and donation history table.
-- `js/app.js` calls the API, stores the JWT in `sessionStorage`, attaches `Authorization: Bearer ...`, renders server responses with `textContent`, and shows confirmations/errors.
+- `js/app.js` calls the API, stores the session token in `sessionStorage`, attaches `Authorization: Bearer ...`, renders server responses with `textContent`, and shows confirmations/errors.
 - `js/config.js` contains only the API base URL and public Turnstile site key, not data.
 - The eligibility banner changes from green to amber using the `eligible` and `daysRemaining` values returned by the backend.
 - The donation history table is built only from `GET /donations`.
@@ -260,7 +267,7 @@ Evidence: `[LOGIN SCREEN]`, `[REGISTER SCREEN]`, `[PROFILE SCREEN]`, `[ELIGIBILI
 - Errors use one shape: `{ error: { code, message, details? } }`.
 - Status codes include 200, 201, 400, 401, 403, 404, 409, 413, 429, 500 and 503.
 - Malformed JSON becomes 400; oversized bodies become 413.
-- Passwords, JWTs, Turnstile tokens and connection strings are never logged.
+- Passwords, session tokens, Turnstile tokens and connection strings are never logged.
 - `.env` and `.env.*` are gitignored. Secrets are supplied through environment variables in Lambda/Vercel and `backend/.env` locally. Docker receives them through Compose `env_file`; they are not copied into images.
 - Helmet, CORS allow-listing, rate limiting and strict CSP add further protection.
 
@@ -293,9 +300,9 @@ Coverage includes:
 - Unit tests for the pure eligibility function: no history, 55 days, exactly 56 days, configurable interval and rounded-up days remaining.
 
 ### Build and integration proof
-- `npm run build` → `Build validation passed: backend JS, frontend JS, JSON, Neon config and required files.`
-- Real Neon schema applied → `Tables verified: donations, donors, users`.
-- Direct catalog check → 1 user, 1 donor, 3 donation rows after the end-to-end run.
+- `npm run build` → `Build validation passed: backend JS, frontend JS, JSON and required files.`
+- Real Neon schema applied → `Tables: donations, donors, sessions, users`.
+- Direct catalog check → `sessions_pkey`, `sessions_user_id_idx` and `sessions_expires_at_idx` verified in addition to the data rows.
 - End-to-end run against the real API and Neon → **16/16 checks passed**, including register, login, profile, eligibility before/after donations, 56-day block with 409, history, Booking service call, Check-in donation and protected metrics.
 - Docker Compose → both containers healthy; the same 16 end-to-end checks passed against the containerized API.
 
@@ -309,14 +316,14 @@ Coverage includes:
 | Metrics counters are in memory | Reset on Lambda/container restart | Use CloudWatch Metrics/Logs for long-term monitoring |
 | Automated HTTP tests use a fake repository | Do not prove Neon concurrency | Real Neon end-to-end run and direct catalog check were also performed |
 | No load/concurrency test | Throughput limits not measured | Use API Gateway/Lambda scaling and rate limiting; add load testing later |
-| Floci deployment not executed in this workspace | Deployment marks require emulator evidence | Follow Section 11 and attach Floci screenshots |
+| Floci HTTP API not shown in Floci Dash | Dash's API page does not list HTTP APIs | Verify with `aws apigatewayv2 get-apis`, `get-routes` and `get-stages` |
 | No real production Turnstile hostname yet | Production widget cannot be finalised | Add hostname after frontend deployment, then retest register/login |
 
 ---
 
 ## 11. Deployment on Floci / AWS emulator
 
-**Current status:** the code has been proven on Vercel + Neon, which the brief treats as the minimum submission and loses deployment marks. To gain the deployment marks, this service must be deployed on **Floci or an equivalent AWS emulator** with at least **three AWS services owned by this student**. The mapping below satisfies that with five.
+**Current status:** the service is deployed on **Floci** with an API Gateway HTTP API v2, Lambda, IAM, CloudWatch Logs and S3. Neon remains the external database and Cloudflare Turnstile the external bot-protection API.
 
 ### AWS services used by this student's component
 
@@ -332,18 +339,12 @@ Neon remains the external Postgres service recommended by the brief. Cloudflare 
 
 ### Deployment steps
 
-1. Create/link the Neon project and confirm `users`, `donors` and `donations` exist.
-2. In Floci, create an **IAM role** for Lambda with CloudWatch log permissions and permission to read the application secrets.
-3. Package the backend:
-   ```powershell
-   cd backend
-   npm ci --omit=dev
-   Compress-Archive -Path * -DestinationPath ..\auth-api.zip -Force
-   ```
-4. Create a **Lambda** function (Node.js 20) and upload `auth-api.zip`. Set the handler to the exported Express app wrapper. Set environment variables: `DATABASE_URL`, `JWT_SECRET`, `TURNSTILE_SECRET_KEY`, `INTERNAL_SERVICE_TOKEN`, `METRICS_TOKEN`, `CORS_ORIGINS`, `DONATION_INTERVAL_DAYS`.
-5. Create an **API Gateway HTTP API** and route all `/api/auth/{proxy+}` requests to the Lambda. Enable CORS for the S3/frontend origin.
-6. Create an **S3** bucket, upload the contents of `frontend/`, and set `frontend/js/config.js` to the API Gateway invoke URL and the real Turnstile site key.
-7. Create a **CloudWatch** log group for the Lambda and verify that JSON request logs and named events appear after a register/login test.
+1. Create/link the Neon project and confirm `users`, `donors`, `donations` and `sessions` exist.
+2. Configure the lab AWS CLI profile `floci` and start Floci with `docker compose -f infra/floci/docker-compose.yml up -d`. `npm run aws:deploy` creates the IAM role with CloudWatch log permissions and injects application environment values from `backend/.env`.
+3. Run `npm run aws:deploy`. It packages `backend/lambda.js` with `serverless-http` into `backend/lambda.zip` (excluding `.env`), then creates Lambda with runtime `nodejs24.x` and handler `lambda.handler`.
+4. The script creates an **API Gateway HTTP API v2** with explicit routes for every endpoint plus `OPTIONS`, stage `$default`, and a Lambda permission for the API.
+5. It creates a **CloudWatch** log group `/aws/lambda/auth-identity-api`, uploads `frontend/` to **S3** with `aws s3 sync`, and writes the generated invoke URL into `frontend/js/config.js`.
+6. Verify with `aws apigatewayv2 get-apis/get-routes/get-stages`, the printed health URL, the S3 frontend URL, and JSON log lines after a register/login test.
 8. Register the deployed frontend hostname in Cloudflare Turnstile → **Allowed hostname** (hostname only, no `https://`, path or port).
 9. Run the same 16 end-to-end checks against the API Gateway base URL and attach the responses.
 10. Confirm the frontend on S3 shows live backend data, not placeholder data.
@@ -375,7 +376,8 @@ README.md
 docker-compose.yml
 .dockerignore
 dockerfile: backend/Dockerfile, frontend/Dockerfile
-neon.ts
+infra/floci/docker-compose.yml
+scripts/deploy-floci.ps1
 scripts/build.js
 package.json
 package-lock.json
@@ -384,7 +386,7 @@ package-lock.json
 Suggested commit messages:
 
 ```text
-Implement authentication, identity and JWT issuance service
+Implement authentication, identity and session token issuance service
 Implement eligibility calculation and donation recording with 56-day rule
 Add Cloudflare Turnstile verification and input validation
 Add structured logging, health, readiness and metrics endpoints
@@ -401,7 +403,7 @@ Record the resulting hashes here: `[COMMIT HASH 1]`, `[COMMIT HASH 2]`, `[COMMIT
 
 | Common mistake | How this part avoids it |
 | --- | --- |
-| CRUD-only service | Applies hashing, bot checks, JWT identity checks, 56-day eligibility, backdated-donation logic and amount limits. |
+| CRUD-only service | Applies hashing, bot checks, session token identity checks, 56-day eligibility, backdated-donation logic and amount limits. |
 | Isolated services | Exposes documented service-token endpoints used by Booking and Check-in; shares `donorId` and eligibility logic. |
 | Unrelated functionalities | Register, profile, eligibility, history and monitoring all support one capability: trusted donor identity and eligibility. |
 | Hard-coded frontend data | All screens render JSON from the API; `config.js` contains only URLs and public keys. |

@@ -2,6 +2,7 @@ function createFakeRepository() {
   const users = [];
   const donors = [];
   const donations = [];
+  const sessions = [];
   let sequence = 0;
 
   function newId() {
@@ -29,6 +30,7 @@ function createFakeRepository() {
     users,
     donors,
     donations,
+    sessions,
     async findUserByEmail(email) {
       return users.find((user) => user.email === String(email).toLowerCase()) || null;
     },
@@ -57,6 +59,13 @@ function createFakeRepository() {
       users.push(user);
       donors.push(donor);
       return identityFor(user, donor);
+    },
+    async createSession(input) {
+      sessions.push({ ...input });
+      return true;
+    },
+    async findSessionByTokenHash(tokenHash) {
+      return sessions.find((session) => session.tokenHash === tokenHash) || null;
     },
     async findIdentityByUserId(userId) {
       const user = users.find((item) => item.id === userId);

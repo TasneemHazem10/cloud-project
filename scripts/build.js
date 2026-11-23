@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const targets = [
   {
     dir: path.join(root, 'backend'),
-    required: ['server.js', 'app.js', 'config.js', 'db/schema.sql', '.env.example', 'package.json']
+    required: ['server.js', 'lambda.js', 'app.js', 'config.js', 'db/schema.sql', '.env.example', 'package.json']
   },
   {
     dir: path.join(root, 'frontend'),
@@ -40,11 +40,11 @@ for (const target of targets) {
   JSON.parse(fs.readFileSync(path.join(target.dir, 'package.json'), 'utf8'));
 }
 
-for (const file of ['neon.ts', 'README.md', 'package.json']) {
+for (const file of ['README.md', 'package.json']) {
   if (!fs.existsSync(path.join(root, file))) {
     throw new Error(`Missing required file: ${file}`);
   }
 }
 JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-console.log('Build validation passed: backend JS, frontend JS, JSON, Neon config and required files.');
+console.log('Build validation passed: backend JS, frontend JS, JSON and required files.');

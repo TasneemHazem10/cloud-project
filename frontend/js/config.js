@@ -2,7 +2,7 @@
 const isAwsEmulator = window.location.hostname.includes('floci') || window.location.port === '4566';
 
 const API_BASE_URL = isAwsEmulator
-  ? 'http://localhost:4566/restapis/5ce3d6cc44/prod/_user_request_/api/auth'
+  ? 'http://d7da4ba967.execute-api.localhost.floci.io:4566/api/auth'
   : isLocal
     ? 'http://localhost:3000/api/auth'
     : 'https://YOUR-API-PROJECT.vercel.app/api/auth';

@@ -6,8 +6,6 @@ services:
     env_file:
       - path: backend/.env
         required: true
-      - path: .env.local
-        required: false
     ports:
       - "3000:3000"
     restart: unless-stopped

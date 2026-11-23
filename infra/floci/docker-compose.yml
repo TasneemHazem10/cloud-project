@@ -11,4 +11,7 @@ services:
       - FLOCI_STORAGE_MODE=hybrid
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./.floci:/app/data"
+      - "floci-data:/app/data"
+
+volumes:
+  floci-data:

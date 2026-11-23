@@ -1,12 +1,11 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env.local'), quiet: true });
 require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
 
 const { loadConfig } = require('./config');
 const { createSql } = require('./db/neon');
 const { createAuthRepository } = require('./repositories/authRepository');
 const { createPasswordService } = require('./services/password');
-const { createTokenService } = require('./services/token');
+const { createSessionService } = require('./services/session');
 const { evaluateEligibility } = require('./services/eligibility');
 const { createMetrics } = require('./services/metrics');
 const { createLogger } = require('./services/logger');
@@ -19,8 +18,8 @@ const logger = createLogger(config.environment === 'production' ? 'info' : 'debu
 const metrics = createMetrics();
 const sql = createSql(config.databaseUrl);
 const repository = createAuthRepository(sql);
-const passwordService = createPasswordService(config.bcryptRounds);
-const tokenService = createTokenService({ secret: config.jwtSecret, expiresIn: config.jwtExpiresIn });
+const passwordService = createPasswordService(config.passwordScryptCost);
+const tokenService = createSessionService({ repository, expiresIn: config.sessionExpiresIn });
 const turnstileVerifier = createTurnstileVerifier({
   secretKey: config.turnstileSecretKey,
   expectedHostname: config.turnstileExpectedHostname,
