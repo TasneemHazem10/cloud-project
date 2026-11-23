@@ -262,7 +262,7 @@ These need your accounts, secrets or deployed URLs, so I could not finish them i
 | 8 | Replace `YOUR-API-PROJECT` in `frontend/js/config.js` and `frontend/vercel.json` | local files | Your API domain and I can update both |
 | 9 | Add the frontend domain to `CORS_ORIGINS` on the API project and redeploy | Vercel → API → Settings → Environment Variables | Confirmation |
 | 10 | Create the team GitHub repository, push, and invite the module leader | GitHub | Repository URL and commit hashes for your contribution |
-| 11 | Capture evidence: Postman responses, Neon table view, Vercel logs, browser screens, Network tab | local + cloud | Screenshots/response bodies so I can fill the `Actual result` and `Evidence` columns of `docs/test-plan.md` |
+| 11 | Capture evidence: Postman responses, Neon table view, CloudWatch logs on Floci, browser screens, Network tab | local + cloud | Screenshots/response bodies so I can fill the `Actual result` and `Evidence` columns of `docs/test-plan.md` |
 | 12 | Record the demo video on the deployed URL | screen recorder | Link for the report |
 | 13 | Agree the service token with the Booking and check-in students | team chat | Confirmation so I can note the integration as tested |
 

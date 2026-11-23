@@ -73,4 +73,4 @@ Automated: `cd backend && npm test` → 34 tests, all passing locally. The table
 5. Check-in calls `POST /donations` with service token (Postman).
 6. Refresh the frontend: history has the new row, banner shows waiting period and next eligible date.
 7. Try a second check-in: 409 `NOT_ELIGIBLE`.
-8. Show Vercel Logs and `/metrics` to prove logging and monitoring.
+8. Show CloudWatch Logs on Floci and `/metrics` to prove logging and monitoring.
