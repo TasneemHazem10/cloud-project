@@ -1,0 +1,26 @@
+{
+  "name": "blood-donation-auth-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authentication, identity, eligibility and monitoring service for the blood donation system",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "@vendia/serverless-express": "^4.12.6",
+    "bcryptjs": "^3.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
